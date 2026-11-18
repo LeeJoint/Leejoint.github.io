@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tonk</title>
+<style>
+:root{--felt:#14573f;--felt2:#0b3727;--card:#fbf7ee;--ink:#1b1b22;--red:#b8242f;--brass:#e0b552}
+*{box-sizing:border-box;margin:0}
+body{font:16px system-ui,sans-serif;color:#fff;min-height:100dvh;background:radial-gradient(ellipse at 50% 25%,var(--felt),var(--felt2));padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom)}
+#app{max-width:640px;margin:0 auto;padding:10px 0 24px}
+h1{font:700 44px Georgia,serif;text-align:center;margin:30px 0 4px;color:var(--brass)}
+p{opacity:.85;text-align:center;margin:6px 0}
+.home{display:flex;flex-direction:column;gap:12px;padding-top:10px}
+input{font:inherit;padding:13px;border-radius:10px;border:2px solid #0006;background:#0003;color:#fff;text-align:center}
+input::placeholder{color:#fff8}
+button{font:600 16px system-ui;padding:12px 18px;border-radius:10px;border:2px solid var(--brass);background:transparent;color:var(--brass)}
+button.pri{background:var(--brass);color:var(--ink)}
+button:disabled{opacity:.35}
+.or{text-align:center;opacity:.6}
+ul{list-style:none;padding:0;text-align:center;line-height:2}
+.st{background:#0004;border-radius:10px;padding:10px;text-align:center;margin:8px 0;min-height:44px}
+.pl{background:#0003;border-radius:12px;padding:8px 10px;margin:8px 0;border:2px solid transparent}
+.pl.on{border-color:var(--brass)}.pl.win{border-color:#fff;background:#e0b55233}
+.nm span{color:var(--brass);font-weight:700}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.sp{display:flex;padding:4px;border-radius:8px;background:#0004}
+.sp .c{margin-right:-14px}.sp .c:last-child{margin-right:0}
+.c{width:52px;height:74px;border-radius:7px;background:var(--card);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Georgia,serif;box-shadow:0 2px 4px #0006;user-select:none;position:relative}
+.c b{font-size:22px;line-height:1}.c i{font-style:normal;font-size:24px;line-height:1.1}
+.c.r{color:var(--red)}
+.c.m{width:34px;height:48px}.c.m b{font-size:15px}.c.m i{font-size:15px}
+.c.h{cursor:pointer;transition:transform .12s}
+.c.sel{transform:translateY(-14px);box-shadow:0 0 0 3px var(--brass),0 6px 10px #0008}
+.back{background:repeating-linear-gradient(45deg,#7d1f2b,#7d1f2b 6px,#5e1620 6px,#5e1620 12px);border:3px solid var(--card);color:#fff}
+.back small{background:#000a;border-radius:6px;padding:1px 6px;font:12px system-ui}
+.slot{border:2px dashed #fff4;background:none;box-shadow:none}
+.go{box-shadow:0 0 0 3px var(--brass),0 0 14px var(--brass);cursor:pointer}
+.mid{display:flex;justify-content:center;gap:20px;margin:14px 0}
+.me{margin-top:14px;padding-top:8px}
+.btns{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+.hand{padding-top:16px}
+.hint{font-size:13px;opacity:.7;text-align:center;margin-top:8px}
+</style></head><body>
+<div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),app=$('#app');
+const SU='♠♥♦♣',RK=['','A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const rk=c=>c%13+1,su=c=>Math.floor(c/13),val=c=>Math.min(rk(c),10),tot=h=>h.reduce((a,c)=>a+val(c),0);
+const srt=(a,b)=>rk(a)-rk(b)||su(a)-su(b);
+const cd=(c,cls='',id='')=>`<div ${id?`id="${id}"`:''} class="c ${su(c)==1||su(c)==2?'r':''} ${cls}" data-c="${c}"><b>${RK[rk(c)]}</b><i>${SU[su(c)]}</i></div>`;
+function okSpread(cs){if(cs.length<3)return false;const r=cs.map(rk).sort((a,b)=>a-b);
+ if(r.every(x=>x==r[0]))return true;
+ return cs.every(c=>su(c)==su(cs[0]))&&r.every((x,i)=>!i||x==r[i-1]+1)}
+let peer,conns=[],conn,G,V,isHost=false,sel=[],code='',myName='';
+
+/* ---------- host game logic ---------- */
+function deal(){
+ const d=[...Array(52).keys()].sort(()=>Math.random()-.5),n=G.players.length;
+ G.players.forEach(p=>{p.hand=d.splice(0,5).sort(srt);p.spreads=[];p.frozen=false});
+ G.stock=d;G.discard=[G.stock.pop()];G.turn=(G.round-1)%n;G.phase='start';G.over=null;
+ const w=G.players.findIndex(p=>tot(p.hand)>=49);
+ if(w>=0)finish(w,2,G.players[w].name+' was dealt '+tot(G.players[w].hand)+' — instant Tonk!');
+}
+function finish(w,pts,msg,pay){
+ pay=pay||G.players.map((_,i)=>i).filter(i=>i!=w);
+ pay.forEach(i=>{G.players[i].score-=pts;G.players[w].score+=pts});
+ G.over={w,msg:msg+` (+${pts*pay.length})`};
+}
+function lowest(msg){let w=0;G.players.forEach((p,i)=>{if(tot(p.hand)<tot(G.players[w].hand))w=i});
+ finish(w,1,msg+' '+G.players[w].name+' has the lowest hand ('+tot(G.players[w].hand)+').')}
+function next(){G.turn=(G.turn+1)%G.players.length;G.phase='start';
+ if(!G.stock.length)lowest('The stock is empty.')}
+function act(p,a){
+ if(G.over){if(a.t=='next'&&p==0){G.round++;deal()}return}
+ if(p!=G.turn)return;const P=G.players[p],H=c=>P.hand.includes(c);
+ if(a.t=='draw'&&G.phase=='start'){
+  if(a.from=='discard'){if(!G.discard.length)return;P.hand.push(G.discard.pop())}
+  else{if(!G.stock.length)return;P.hand.push(G.stock.pop())}
+  P.hand.sort(srt);G.phase='play';
+ }else if(a.t=='drop'&&G.phase=='start'){
+  const mine=tot(P.hand);if(P.frozen||mine>14)return;
+  let b=-1,bv=99;G.players.forEach((q,i)=>{if(i!=p&&tot(q.hand)<bv){bv=tot(q.hand);b=i}});
+  if(mine<bv)finish(p,1,P.name+' dropped with '+mine+' and wins!');
+  else finish(b,2,P.name+' dropped with '+mine+' but '+G.players[b].name+' has '+bv+' — caught!',[p]);
+ }else if(a.t=='spread'&&G.phase=='play'){
+  if(!a.cards.every(H)||!okSpread(a.cards))return;
+  P.hand=P.hand.filter(c=>!a.cards.includes(c));P.spreads.push([...a.cards].sort(srt));
+  if(!P.hand.length)finish(p,2,P.name+' went out — Tonk!');
+ }else if(a.t=='hit'&&G.phase=='play'){
+  const T=G.players[a.p],S=T&&T.spreads[a.s];if(!S||!H(a.card))return;
+  const n=[...S,a.card];if(!okSpread(n))return;
+  T.spreads[a.s]=n.sort(srt);P.hand=P.hand.filter(c=>c!=a.card);if(a.p!=p)T.frozen=true;
+  if(!P.hand.length)finish(p,2,P.name+' went out — Tonk!');
+ }else if(a.t=='discard'&&G.phase=='play'){
+  if(!H(a.card))return;P.hand=P.hand.filter(c=>c!=a.card);G.discard.push(a.card);P.frozen=false;
+  if(!P.hand.length)finish(p,2,P.name+' went out — Tonk!');else next();
+ }
+}
+function view(i){return{started:G.started,round:G.round,turn:G.turn,phase:G.phase,over:G.over,me:i,
+ stock:G.stock?G.stock.length:0,discard:G.discard&&G.discard.length?G.discard[G.discard.length-1]:null,
+ players:G.players.map((p,j)=>({name:p.name,score:p.score,frozen:p.frozen,spreads:p.spreads||[],
+  n:p.hand?p.hand.length:0,hand:p.hand&&(j==i||G.over)?p.hand:null}))}}
+function sync(){conns.forEach((c,i)=>{if(c&&c.open)c.send({t:'s',v:view(i)})});render(view(0))}
+const snd=a=>{if(isHost){act(0,a);sync()}else conn.send(a)};
+
+/* ---------- networking ---------- */
+function hostRoom(){
+ code=Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');
+ peer=new Peer('tonk-'+code);
+ peer.on('error',e=>e.type=='unavailable-id'?hostRoom():alert('Connection problem: '+e.type));
+ peer.on('open',()=>{isHost=true;G={players:[{name:myName,score:0}],started:false};conns=[null];sync()});
+ peer.on('connection',c=>c.on('data',m=>{
+  if(m.t=='join'){
+   if(G.started||G.players.length>=4)return c.send({t:'full'});
+   c.pidx=G.players.length;G.players.push({name:(m.name||'Player').slice(0,12),score:0});conns.push(c);sync();
+  }else if(c.pidx!=null){act(c.pidx,m);sync()}
+ }));
+}
+function joinRoom(cc){
+ code=cc;peer=new Peer();
+ peer.on('error',()=>alert('Could not reach that room. Check the code.'));
+ peer.on('open',()=>{conn=peer.connect('tonk-'+code,{reliable:true});
+  conn.on('open',()=>conn.send({t:'join',name:myName}));
+  conn.on('data',m=>m.t=='s'?render(m.v):alert('Room is full or already started.'));
+  conn.on('close',()=>{app.innerHTML='<div class="home"><h1>Disconnected</h1><button onclick="location.reload()">Back to start</button></div>'});
+ });
+}
+const link=()=>location.origin+location.pathname+'?room='+code;
+
+/* ---------- UI ---------- */
+function home(){const q=new URLSearchParams(location.search).get('room')||'';
+ app.innerHTML=`<div class="home"><h1>♠ Tonk ♥</h1><p>Free and ad-free. 2–4 players.</p>
+ <input id="nm" placeholder="Your name" maxlength="12">
+ ${q?'':'<button id="mk" class="pri">Create room</button><div class="or">or join a friend</div>'}
+ <input id="cd" placeholder="Room code" maxlength="4" value="${q}" style="text-transform:uppercase">
+ <button id="jn" ${q?'class="pri"':''}>Join room</button></div>`}
+function render(v){
+ V=v;
+ if(!v.started){
+  app.innerHTML=`<div class="home"><h1>Room ${code}</h1><p>Send friends this link, or the code.</p>
+  <button id="cp">Copy invite link</button><ul>${v.players.map(p=>`<li>${p.name}</li>`).join('')}</ul>
+  ${isHost?`<button id="go" class="pri" ${v.players.length<2?'disabled':''}>Start game</button>`:'<p>Waiting for the host to start…</p>'}</div>`;return}
+ const me=v.players[v.me];sel=sel.filter(c=>me.hand&&me.hand.includes(c));
+ const mine=v.turn==v.me&&!v.over,ph=v.phase,t=me.hand?tot(me.hand):0;
+ const spr=(j,p)=>p.spreads.map((s,k)=>`<div class="sp" data-p="${j}" data-s="${k}">${s.map(c=>cd(c,'m')).join('')}</div>`).join('');
+ const opps=v.players.map((p,j)=>j==v.me?'':`<div class="pl ${v.turn==j&&!v.over?'on':''} ${v.over&&v.over.w==j?'win':''}">
+  <div class="nm"><b>${p.name}</b> <span>${p.score>0?'+':''}${p.score}</span> · ${p.n} cards${p.frozen?' ❄':''}</div>
+  <div class="row">${spr(j,p)}</div>${v.over&&p.hand?`<div class="row">${p.hand.map(c=>cd(c,'m')).join('')}</div>`:''}</div>`).join('');
+ const canDrop=mine&&ph=='start'&&t<=14&&!me.frozen;
+ const status=v.over?v.over.msg:mine?(ph=='start'?'Your turn: draw a card'+(canDrop?' or drop':''):'Spread, hit or discard'):v.players[v.turn].name+'’s turn';
+ const dis=v.discard==null?'<div id="disc" class="c slot"></div>':cd(v.discard,mine&&ph=='start'?'go':'','disc');
+ app.innerHTML=`${opps}
+ <div class="mid"><div id="stock" class="c back ${mine&&ph=='start'?'go':''}"><small>${v.stock}</small></div>${dis}</div>
+ <div class="st">${status}</div>
+ <div class="pl me ${v.over&&v.over.w==v.me?'win':''} ${mine?'on':''}"><div class="nm"><b>${me.name} (you)</b> <span>${me.score>0?'+':''}${me.score}</span> · hand ${t}${me.frozen?' ❄ can’t drop':''}</div>
+ <div class="row">${spr(v.me,me)}</div>
+ <div class="row hand">${me.hand.map(c=>cd(c,'h'+(sel.includes(c)?' sel':''))).join('')}</div></div>
+ <div class="btns">
+ ${mine&&ph=='play'?`<button id="sp" ${okSpread(sel)?'':'disabled'}>Spread</button><button id="dc" class="pri" ${sel.length==1?'':'disabled'}>Discard</button>`:''}
+ ${canDrop?`<button id="dr">Drop (${t})</button>`:''}
+ ${v.over?(isHost?'<button id="nx" class="pri">Next round</button>':'<p>Waiting for host…</p>'):''}</div>
+ ${mine&&ph=='play'?'<div class="hint">Hit: select one card, then tap any spread. Hitting someone freezes ❄ them (no drop next turn).</div>':''}`;
+}
+app.onclick=e=>{
+ const el=e.target.closest('button,.c.h,.sp,#stock,#disc');if(!el)return;const id=el.id;
+ if(id=='mk'){myName=$('#nm').value.trim()||'Host';hostRoom()}
+ else if(id=='jn'){const c=$('#cd').value.trim().toUpperCase();if(c.length!=4)return alert('Enter the 4-letter room code.');myName=$('#nm').value.trim()||'Player';joinRoom(c)}
+ else if(id=='cp'){navigator.clipboard&&navigator.clipboard.writeText(link());el.textContent='Copied!'}
+ else if(id=='go'){G.started=true;G.round=1;deal();sync()}
+ else if(id=='nx')snd({t:'next'});
+ else if(el.classList.contains('h')){const c=+el.dataset.c;sel=sel.includes(c)?sel.filter(x=>x!=c):[...sel,c];render(V)}
+ else if(id=='stock')snd({t:'draw',from:'stock'});
+ else if(id=='disc')snd({t:'draw',from:'discard'});
+ else if(el.classList.contains('sp')){if(sel.length==1){const c=sel[0];sel=[];snd({t:'hit',p:+el.dataset.p,s:+el.dataset.s,card:c})}}
+ else if(id=='sp'){const c=sel;sel=[];snd({t:'spread',cards:c})}
+ else if(id=='dc'){const c=sel[0];sel=[];snd({t:'discard',card:c})}
+ else if(id=='dr')snd({t:'drop'});
+};
+home();
+</script></body></html>
